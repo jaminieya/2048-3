@@ -210,18 +210,13 @@ function drawCube(cx,cy,cz,h,v){
     const sh=a===1?(s>0?0:.45):(a===0?.22:.1);
     if(sh){ctx.fillStyle='rgba(0,0,0,'+sh+')';ctx.fillRect(0,0,1,1)}
     ctx.lineWidth=.03;ctx.strokeStyle='rgba(0,0,0,.3)';ctx.strokeRect(0,0,1,1);
+    const L=String(v).length,fs=L<=2?.52:L===3?.4:L===4?.31:.25;
+    ctx.fillStyle=dark?'#fff':'#5b4f43';
+    ctx.font='bold '+fs+'px -apple-system,system-ui,sans-serif';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(v,.5,.54);
   }
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  // number: always upright and screen-aligned, so it reads from any view angle
-  const P=proj(cx,cy,cz),f=D/(D+rot(cx,cy,cz)[2]),size=2*h*S*f;
-  const L=String(v).length,fs=size*(L<=2?.5:L===3?.38:L===4?.3:.24);
-  ctx.font='bold '+fs+'px -apple-system,system-ui,sans-serif';
-  ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.lineJoin='round';ctx.lineWidth=fs*.12;
-  ctx.strokeStyle=dark?'rgba(0,0,0,.35)':'rgba(255,255,255,.55)';
-  ctx.strokeText(v,P[0],P[1]+fs*.04);
-  ctx.fillStyle=dark?'#fff':'#5b4f43';
-  ctx.fillText(v,P[0],P[1]+fs*.04);
 }
 let lastT=0;
 function render(){
