@@ -40,7 +40,7 @@ button.on{background:#edc22e;color:#222}
 <div id="app">
   <div class="top">
     <h1 id="logo">3D <span>2048</span></h1>
-    <button class="info" id="bInfo" aria-label="튜토리얼">ⓘ</button>
+    <button class="info" id="bInfo" aria-label="How to play">ⓘ</button>
     <div class="box"><small>Score</small><b id="sc">0</b></div>
     <div class="box"><small>Best</small><b id="bs">0</b></div>
   </div>
@@ -51,17 +51,18 @@ button.on{background:#edc22e;color:#222}
 </div>
 <button id="bUndo" aria-label="Undo">↶</button>
 <div id="tut"><div class="card">
-<h2>플레이 방법</h2>
+<h2>How to play</h2>
 <ul>
-<li><b>목표:</b> 같은 숫자의 큐브끼리 합쳐서 2048을 만드세요.</li>
-<li><b>이동:</b> 한 손가락으로 스와이프. 화면에 보이는 축(X·Y·Z) 방향으로 모든 큐브가 밀려요.</li>
-<li><b>우하단 축 표시:</b> X(빨강)·Y(초록)·Z(파랑) 선이 가리키는 방향이 이동 방향이에요. 그 선 방향으로 스와이프하면 그쪽으로(반대로 밀면 반대쪽으로) 이동해요.</li>
-<li><b>회전:</b> 두 손가락으로 드래그하면 시점이 돌아가요. 축 표시도 같이 돌아가요.</li>
-<li><b>Undo:</b> 좌하단 동그란 버튼. 무제한으로 되돌릴 수 있어요.</li>
-<li><b>새 게임:</b> 상단 로고를 두 번 누르세요.</li>
-<li><b>크기:</b> 점수 아래 버튼으로 3×3×3 / 4×4×4 전환 (새 게임으로 시작).</li>
+<li><b>Goal:</b> merge cubes with the same number to reach 2048.</li>
+<li><b>Move:</b> swipe with one finger. All cubes slide along the axis (X, Y or Z) that matches your swipe direction on screen.</li>
+<li><b>Axis gizmo (bottom right):</b> the red, green and blue lines show where each axis points. Swipe along a line to move that way, or the opposite way to move back.</li>
+<li><b>Rotate:</b> drag with two fingers. The gizmo rotates with the cube.</li>
+<li><b>Undo:</b> the round button at the bottom left. Unlimited.</li>
+<li><b>New game:</b> tap the logo twice.</li>
+<li><b>Size:</b> the button under the score switches between 3×3×3 and 4×4×4 (starts a new game).</li>
+<li><b>Keyboard:</b> W/S up/down, A/D left/right, E/Q away/toward. Hold Z and press W/A/S/D to rotate the view. Arrow keys work too.</li>
 </ul>
-<button id="tutOk">시작하기</button>
+<button id="tutOk">Got it</button>
 </div></div>
 <div id="ov"><div id="ovt">Game over</div><button id="ovb">Try again</button></div>
 <div id="toast">You made 2048! Keep going</div>
@@ -209,17 +210,29 @@ function drawCube(cx,cy,cz,h,v){
     const sh=a===1?(s>0?0:.45):(a===0?.22:.1);
     if(sh){ctx.fillStyle='rgba(0,0,0,'+sh+')';ctx.fillRect(0,0,1,1)}
     ctx.lineWidth=.03;ctx.strokeStyle='rgba(0,0,0,.3)';ctx.strokeRect(0,0,1,1);
-    const L=String(v).length,fs=L<=2?.52:L===3?.4:L===4?.31:.25;
-    ctx.fillStyle=dark?'#fff':'#5b4f43';
-    ctx.font='bold '+fs+'px -apple-system,system-ui,sans-serif';
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText(v,.5,.54);
   }
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  // number: always upright and screen-aligned, so it reads from any view angle
+  const P=proj(cx,cy,cz),f=D/(D+rot(cx,cy,cz)[2]),size=2*h*S*f;
+  const L=String(v).length,fs=size*(L<=2?.5:L===3?.38:L===4?.3:.24);
+  ctx.font='bold '+fs+'px -apple-system,system-ui,sans-serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.lineJoin='round';ctx.lineWidth=fs*.12;
+  ctx.strokeStyle=dark?'rgba(0,0,0,.35)':'rgba(255,255,255,.55)';
+  ctx.strokeText(v,P[0],P[1]+fs*.04);
+  ctx.fillStyle=dark?'#fff':'#5b4f43';
+  ctx.fillText(v,P[0],P[1]+fs*.04);
 }
+let lastT=0;
 function render(){
   requestAnimationFrame(render);
   if(!W)resize();
+  const tn=now(),dt=Math.min(.05,(tn-(lastT||tn))/1000);lastT=tn;
+  if(keys.has('KeyZ')){
+    const k=k=>keys.has(k)?1:0;
+    yaw+=(k('KeyD')-k('KeyA'))*dt*1.8;
+    pitch=clamp(pitch+(k('KeyS')-k('KeyW'))*dt*1.8,-1.3,1.3);
+  }
   cy_=Math.cos(yaw);sy_=Math.sin(yaw);cp_=Math.cos(pitch);sp_=Math.sin(pitch);
   S=Math.min(W,H)/(N*2.0);D=N*3.2;
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
@@ -296,14 +309,24 @@ function endPtr(ev,allowSwipe){
 }
 cv.addEventListener('pointerup',ev=>endPtr(ev,true));
 cv.addEventListener('pointercancel',ev=>endPtr(ev,false));
+const keys=new Set();
 window.addEventListener('keydown',ev=>{
-  const va=viewAxes(),m={ArrowLeft:neg(va.right),ArrowRight:va.right,ArrowUp:[0,1,0],ArrowDown:[0,-1,0],w:va.away,W:va.away,s:neg(va.away),S:neg(va.away)}[ev.key];
+  if(ev.metaKey||ev.ctrlKey||ev.altKey)return;
+  const c=ev.code;keys.add(c);
+  if(c==='KeyZ'){ev.preventDefault();return}
+  if(keys.has('KeyZ')&&/^Key[WASD]$/.test(c)){ev.preventDefault();return} // handled per frame (rotate)
+  const va=viewAxes();
+  const m={ArrowLeft:neg(va.right),ArrowRight:va.right,ArrowUp:[0,1,0],ArrowDown:[0,-1,0],
+    KeyA:neg(va.right),KeyD:va.right,KeyW:[0,1,0],KeyS:[0,-1,0],KeyE:va.away,KeyQ:neg(va.away)}[c];
   if(m){ev.preventDefault();move(m)}
 });
+window.addEventListener('keyup',ev=>keys.delete(ev.code));
+window.addEventListener('blur',()=>keys.clear());
+
 let armed=0;
 function confirmNew(action){
   if(score===0||over||now()-armed<2000){armed=0;$('toast').style.display='none';action();return}
-  armed=now();const el=$('toast');el.textContent='한 번 더 누르면 새 게임';el.style.display='block';
+  armed=now();const el=$('toast');el.textContent='Tap again for a new game';el.style.display='block';
   setTimeout(()=>{if(now()-armed>=1900)el.style.display='none'},2000);
 }
 $('logo').onclick=()=>confirmNew(newGame);
