@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>3D 2048</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+html,body{margin:0;height:100%;background:#14161c;color:#eee;font-family:-apple-system,system-ui,"Segoe UI",sans-serif;overflow:hidden;touch-action:none}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;padding:max(env(safe-area-inset-top),8px) 12px max(env(safe-area-inset-bottom),10px)}
+.top{display:flex;align-items:center;gap:8px;padding:4px 0}
+h1{font-size:22px;margin:0;flex:1;letter-spacing:.5px;cursor:pointer}
+h1 span{color:#edc22e}
+.box{background:#252936;border-radius:8px;padding:4px 10px;text-align:center;min-width:64px}
+.box small{display:block;font-size:10px;color:#9aa0b4;text-transform:uppercase}
+.box b{font-size:17px}
+.bar{display:flex;gap:6px;padding:4px 0}
+button{font:inherit;color:#eee;background:#2b3040;border:0;border-radius:10px;padding:9px 12px;font-size:14px;font-weight:600;flex:1}
+button:active{background:#3a4156}
+button.on{background:#edc22e;color:#222}
+#c{flex:1;width:100%;min-height:0;display:block;touch-action:none}
+.depth{display:flex;gap:8px;padding-top:4px}
+.depth button{padding:15px 8px;font-size:16px;background:#303a5a}
+.info{flex:none;width:24px;height:24px;padding:0;border-radius:50%;font-size:13px;line-height:1;font-weight:700}
+#bUndo{position:fixed;left:16px;bottom:calc(max(env(safe-area-inset-bottom),10px) + 16px);flex:none;width:56px;height:56px;padding:0;border-radius:50%;font-size:26px;background:#303a5a;z-index:3;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#bSize{flex:none;padding:6px 12px;font-size:13px}
+.bar{justify-content:flex-end}
+#tut{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,12,18,.82);z-index:7;padding:20px}
+#tut .card{background:#232736;border-radius:16px;padding:20px 20px 16px;max-width:360px;width:100%;line-height:1.5;font-size:15px}
+#tut h2{margin:0 0 10px;font-size:19px}
+#tut ul{margin:0 0 14px;padding-left:18px}
+#tut li{margin-bottom:7px}
+#tut button{width:100%;background:#edc22e;color:#222;padding:12px}
+#ov{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;background:rgba(10,12,18,.78);font-size:28px;font-weight:700;z-index:5}
+#ov button{flex:none;padding:12px 28px;font-size:17px;background:#edc22e;color:#222}
+#toast{position:fixed;left:50%;top:18%;transform:translateX(-50%);background:#edc22e;color:#222;padding:10px 18px;border-radius:12px;font-weight:700;display:none;z-index:6}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top">
+    <h1 id="logo">3D <span>2048</span></h1>
+    <button class="info" id="bInfo" aria-label="튜토리얼">ⓘ</button>
+    <div class="box"><small>Score</small><b id="sc">0</b></div>
+    <div class="box"><small>Best</small><b id="bs">0</b></div>
+  </div>
+  <div class="bar">
+    <button id="bSize">3×3×3</button>
+  </div>
+  <canvas id="c"></canvas>
+</div>
+<button id="bUndo" aria-label="Undo">↶</button>
+<div id="tut"><div class="card">
+<h2>플레이 방법</h2>
+<ul>
+<li><b>목표:</b> 같은 숫자의 큐브끼리 합쳐서 2048을 만드세요.</li>
+<li><b>이동:</b> 한 손가락으로 스와이프. 화면에 보이는 축(X·Y·Z) 방향으로 모든 큐브가 밀려요.</li>
+<li><b>우하단 축 표시:</b> X(빨강)·Y(초록)·Z(파랑) 선이 가리키는 방향이 이동 방향이에요. 그 선 방향으로 스와이프하면 그쪽으로(반대로 밀면 반대쪽으로) 이동해요.</li>
+<li><b>회전:</b> 두 손가락으로 드래그하면 시점이 돌아가요. 축 표시도 같이 돌아가요.</li>
+<li><b>Undo:</b> 좌하단 동그란 버튼. 무제한으로 되돌릴 수 있어요.</li>
+<li><b>새 게임:</b> 상단 로고를 두 번 누르세요.</li>
+<li><b>크기:</b> 점수 아래 버튼으로 3×3×3 / 4×4×4 전환 (새 게임으로 시작).</li>
+</ul>
+<button id="tutOk">시작하기</button>
+</div></div>
+<div id="ov"><div id="ovt">Game over</div><button id="ovb">Try again</button></div>
+<div id="toast">You made 2048! Keep going</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const cv=$('c'),ctx=cv.getContext('2d');
+let N=3,tiles=[],dying=[],grid=[],score=0,best=0,won=false,over=false,hist=[];
+let yaw=0.785,pitch=0.62,animT0=-1e9;
+const ANIM=130;
+const bestKey=()=>'best3d2048'+(N===3?'':'_4');
+function loadBest(){best=0;try{best=+localStorage.getItem(bestKey())||0}catch(e){}}
+loadBest();
+const idx=(x,y,z)=>x+N*(y+N*z);
+const now=()=>performance.now();
+const busy=()=>now()-animT0<ANIM;
+
+function spawn(delay){
+  const e=[];
+  for(let x=0;x<N;x++)for(let y=0;y<N;y++)for(let z=0;z<N;z++)if(!grid[idx(x,y,z)])e.push([x,y,z]);
+  if(!e.length)return;
+  const [x,y,z]=e[Math.floor(Math.random()*e.length)];
+  const t={v:Math.random()<.9?2:4,x,y,z,sx:x,sy:y,sz:z,born:now()+delay,merged:false,mergedAt:-1e9};
+  tiles.push(t);grid[idx(x,y,z)]=t;
+}
+function newGame(){
+  grid=new Array(N*N*N).fill(null);tiles=[];dying=[];score=0;won=false;over=false;hist=[];
+  for(let i=0;i<(N===3?2:3);i++)spawn(0);
+  animT0=-1e9;$('ov').style.display='none';loadBest();hud();
+}
+function snapshot(){return{s:score,t:tiles.map(t=>({v:t.v,x:t.x,y:t.y,z:t.z}))}}
+function restore(h){
+  grid=new Array(N*N*N).fill(null);dying=[];
+  tiles=h.t.map(o=>{const t={v:o.v,x:o.x,y:o.y,z:o.z,sx:o.x,sy:o.y,sz:o.z,born:-1e9,merged:false,mergedAt:-1e9};grid[idx(o.x,o.y,o.z)]=t;return t});
+  score=h.s;over=false;animT0=-1e9;$('ov').style.display='none';hud();
+}
+function hud(){
+  if(score>best){best=score;try{localStorage.setItem(bestKey(),best)}catch(e){}}
+  $('sc').textContent=score;$('bs').textContent=best;
+}
+function canMove(){
+  if(tiles.length<N*N*N)return true;
+  for(let x=0;x<N;x++)for(let y=0;y<N;y++)for(let z=0;z<N;z++){
+    const v=grid[idx(x,y,z)].v;
+    if(x+1<N&&grid[idx(x+1,y,z)].v===v)return true;
+    if(y+1<N&&grid[idx(x,y+1,z)].v===v)return true;
+    if(z+1<N&&grid[idx(x,y,z+1)].v===v)return true;
+  }
+  return false;
+}
+function move(d){
+  if(over||busy())return;
+  const snap=snapshot();
+  const ax=d[0]?0:d[1]?1:2,sg=d[ax];
+  const ng=new Array(N*N*N).fill(null);
+  const t0=now();
+  let moved=false,gained=0;
+  tiles.forEach(t=>{t.sx=t.x;t.sy=t.y;t.sz=t.z;t.merged=false});
+  const gone=[];
+  for(let a=0;a<N;a++)for(let b=0;b<N;b++){
+    const line=[];
+    for(let i=0;i<N;i++){
+      const k=sg>0?N-1-i:i,p=[0,0,0];
+      p[ax]=k;p[(ax+1)%3]=a;p[(ax+2)%3]=b;line.push(p);
+    }
+    let last=null,w=0;
+    for(const p of line){
+      const t=grid[idx(p[0],p[1],p[2])];
+      if(!t)continue;
+      if(last&&last.v===t.v&&!last.merged){
+        last.v*=2;last.merged=true;last.mergedAt=t0;gained+=last.v;
+        const q=line[w-1];
+        t.x=q[0];t.y=q[1];t.z=q[2];gone.push(t);moved=true;
+      }else{
+        const q=line[w++];
+        if(t.x!==q[0]||t.y!==q[1]||t.z!==q[2])moved=true;
+        t.x=q[0];t.y=q[1];t.z=q[2];
+        ng[idx(q[0],q[1],q[2])]=t;last=t;
+      }
+    }
+  }
+  if(!moved){tiles.forEach(t=>{t.sx=t.x;t.sy=t.y;t.sz=t.z});return}
+  hist.push(snap);grid=ng;score+=gained;
+  tiles=tiles.filter(t=>!gone.includes(t));dying=gone;
+  animT0=t0;spawn(ANIM*0.8);
+  if(!won&&tiles.some(t=>t.v>=2048)){won=true;const el=$('toast');el.textContent='2048! Keep going';el.style.display='block';setTimeout(()=>el.style.display='none',2200)}
+  hud();
+  if(!canMove()){over=true;setTimeout(()=>{$('ov').style.display='flex'},450)}
+}
+
+/* ---- view-relative axes ---- */
+function viewAxes(){
+  const c=Math.cos(yaw),s=Math.sin(yaw),sg=v=>v<0?-1:1;
+  if(Math.abs(c)>=Math.abs(s))return{right:[sg(c),0,0],away:[0,0,sg(c)]};
+  return{right:[0,0,sg(s)],away:[-sg(s),0,0]};
+}
+const neg=v=>v.map(a=>-a);
+const DIRS=[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+function swipe(dx,dy){
+  const l=Math.hypot(dx,dy);if(!l)return;
+  let best=null,bs=-2;
+  for(const d of DIRS){
+    const r=rot(d[0],d[1],d[2]),sx=r[0],sy=-r[1],m=Math.hypot(sx,sy);
+    if(m<.2)continue; // axis points almost at the camera: no usable screen direction
+    const s=(sx*dx+sy*dy)/(m*l);
+    if(s>bs){bs=s;best=d}
+  }
+  if(best)move(best);
+}
+
+/* ---- rendering ---- */
+let W=0,H=0,dpr=1;
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,3);
+  const r=cv.getBoundingClientRect();W=r.width;H=r.height;
+  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+}
+const COL={2:'#eee4da',4:'#ede0c8',8:'#f2b179',16:'#f59563',32:'#f67c5f',64:'#f65e3b',128:'#edcf72',256:'#edcc61',512:'#edc850',1024:'#edc53f',2048:'#edc22e'};
+const colOf=v=>COL[v]||'#4a4570';
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+let cy_,sy_,cp_,sp_,S,D;
+function rot(x,y,z){
+  const x1=x*cy_+z*sy_,z1=-x*sy_+z*cy_;
+  return[x1,y*cp_+z1*sp_,-y*sp_+z1*cp_];
+}
+function proj(x,y,z){
+  const r=rot(x,y,z),f=D/(D+r[2]);
+  return[W/2+r[0]*f*S,H/2-r[1]*f*S,r[2]];
+}
+const E=[[1,0,0],[0,1,0],[0,0,1]];
+function drawCube(cx,cy,cz,h,v){
+  const dark=v>=8&&v!==2&&v!==4;
+  for(let a=0;a<3;a++)for(const s of[1,-1]){
+    const n=E[a].map(k=>k*s),rn=rot(n[0],n[1],n[2]);
+    if(rn[2]>=0)continue;
+    const b=a===0?2:0,c=a===1?2:1,cs=a===1?1:-1;
+    const o=[cx+n[0]*h,cy+n[1]*h,cz+n[2]*h];
+    const u=E[b].map(k=>k*2*h),w=E[c].map(k=>k*2*h*cs);
+    let org=[o[0]-u[0]/2-w[0]/2,o[1]-u[1]/2-w[1]/2,o[2]-u[2]/2-w[2]/2];
+    let P0=proj(...org),P1=proj(org[0]+u[0],org[1]+u[1],org[2]+u[2]),P2=proj(org[0]+w[0],org[1]+w[1],org[2]+w[2]);
+    let ux=P1[0]-P0[0],uy=P1[1]-P0[1],vx=P2[0]-P0[0],vy=P2[1]-P0[1],ox=P0[0],oy=P0[1];
+    if(ux*vy-uy*vx<0){ox=P1[0];oy=P1[1];ux=-ux;uy=-uy}
+    ctx.setTransform(dpr*ux,dpr*uy,dpr*vx,dpr*vy,dpr*ox,dpr*oy);
+    ctx.fillStyle=colOf(v);ctx.fillRect(0,0,1,1);
+    const sh=a===1?(s>0?0:.45):(a===0?.22:.1);
+    if(sh){ctx.fillStyle='rgba(0,0,0,'+sh+')';ctx.fillRect(0,0,1,1)}
+    ctx.lineWidth=.03;ctx.strokeStyle='rgba(0,0,0,.3)';ctx.strokeRect(0,0,1,1);
+    const L=String(v).length,fs=L<=2?.52:L===3?.4:L===4?.31:.25;
+    ctx.fillStyle=dark?'#fff':'#5b4f43';
+    ctx.font='bold '+fs+'px -apple-system,system-ui,sans-serif';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(v,.5,.54);
+  }
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+function render(){
+  requestAnimationFrame(render);
+  if(!W)resize();
+  cy_=Math.cos(yaw);sy_=Math.sin(yaw);cp_=Math.cos(pitch);sp_=Math.sin(pitch);
+  S=Math.min(W,H)/(N*2.0);D=N*3.2;
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,W,H);
+  const t=now(),k=clamp((t-animT0)/ANIM),e=1-Math.pow(1-k,3),c=(N-1)/2,hf=N/2;
+  // cage
+  ctx.strokeStyle='rgba(160,170,210,.25)';ctx.lineWidth=1;ctx.beginPath();
+  const cs=[];for(let i=0;i<8;i++)cs.push(proj(i&1?hf:-hf,i&2?hf:-hf,i&4?hf:-hf));
+  for(let i=0;i<8;i++)for(let b=1;b<8;b<<=1)if(!(i&b)){ctx.moveTo(cs[i][0],cs[i][1]);ctx.lineTo(cs[i|b][0],cs[i|b][1])}
+  ctx.stroke();
+  // cell dots
+  ctx.fillStyle='rgba(160,170,210,.3)';
+  for(let x=0;x<N;x++)for(let y=0;y<N;y++)for(let z=0;z<N;z++){
+    const p=proj(x-c,y-c,z-c);ctx.beginPath();ctx.arc(p[0],p[1],2,0,7);ctx.fill();
+  }
+  // tiles
+  const items=[];
+  for(const q of tiles){
+    const px=q.sx+(q.x-q.sx)*e-c,py=q.sy+(q.y-q.sy)*e-c,pz=q.sz+(q.z-q.sz)*e-c;
+    let sc=e1(clamp((t-q.born)/160));
+    const u=(t-q.mergedAt-ANIM*.7)/200;
+    if(u>0&&u<1)sc*=1+.22*Math.sin(Math.PI*u);
+    const v=(q.merged&&t-animT0<ANIM*.7)?q.v/2:q.v;
+    items.push({px,py,pz,sc,v,z:rot(px,py,pz)[2]});
+  }
+  if(k>=1)dying=[];
+  for(const q of dying){
+    const px=q.sx+(q.x-q.sx)*e-c,py=q.sy+(q.y-q.sy)*e-c,pz=q.sz+(q.z-q.sz)*e-c;
+    items.push({px,py,pz,sc:1-.25*e,v:q.v,z:rot(px,py,pz)[2]-.01});
+  }
+  items.sort((a,b)=>b.z-a.z);
+  gizmo();
+  for(const i of items)if(i.sc>0.01)drawCube(i.px,i.py,i.pz,.4*i.sc,i.v);
+}
+function gizmo(){
+  const ox=W-44,oy=H-44,L=26;ctx.lineWidth=2;ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+  [['X','#f2736b',[1,0,0]],['Y','#6bd38b',[0,1,0]],['Z','#6ba8f2',[0,0,1]]].forEach(([n,col,d])=>{
+    const r=rot(d[0],d[1],d[2]),ex=ox+r[0]*L,ey=oy-r[1]*L;
+    ctx.strokeStyle=col;ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(ex,ey);ctx.stroke();
+    ctx.fillText(n,ox+r[0]*(L+9),oy-r[1]*(L+9));
+  });
+}
+const e1=x=>1-Math.pow(1-x,3);
+
+/* ---- input ---- */
+const ptrs=new Map();let start=null,rotated=false,lastC=null;
+const centroid=()=>{let x=0,y=0;ptrs.forEach(p=>{x+=p.x;y+=p.y});return{x:x/ptrs.size,y:y/ptrs.size}};
+cv.addEventListener('pointerdown',ev=>{
+  cv.setPointerCapture(ev.pointerId);
+  ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  if(ptrs.size===1){start={x:ev.clientX,y:ev.clientY};rotated=false}
+  else{rotated=true;lastC=centroid()}
+});
+cv.addEventListener('pointermove',ev=>{
+  if(!ptrs.has(ev.pointerId))return;
+  ptrs.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});
+  if(ptrs.size>=2){
+    const c=centroid();
+    yaw+=(c.x-lastC.x)*.01;
+    pitch=clamp(pitch+(c.y-lastC.y)*.01,-1.3,1.3);
+    lastC=c;
+  }
+});
+function endPtr(ev,allowSwipe){
+  if(!ptrs.has(ev.pointerId))return;
+  ptrs.delete(ev.pointerId);
+  if(ptrs.size===1)lastC=centroid();
+  if(ptrs.size===0){
+    if(allowSwipe&&!rotated&&start){
+      const dx=ev.clientX-start.x,dy=ev.clientY-start.y;
+      if(Math.max(Math.abs(dx),Math.abs(dy))>28)swipe(dx,dy);
+    }
+    start=null;rotated=false;
+  }
+}
+cv.addEventListener('pointerup',ev=>endPtr(ev,true));
+cv.addEventListener('pointercancel',ev=>endPtr(ev,false));
+window.addEventListener('keydown',ev=>{
+  const va=viewAxes(),m={ArrowLeft:neg(va.right),ArrowRight:va.right,ArrowUp:[0,1,0],ArrowDown:[0,-1,0],w:va.away,W:va.away,s:neg(va.away),S:neg(va.away)}[ev.key];
+  if(m){ev.preventDefault();move(m)}
+});
+let armed=0;
+function confirmNew(action){
+  if(score===0||over||now()-armed<2000){armed=0;$('toast').style.display='none';action();return}
+  armed=now();const el=$('toast');el.textContent='한 번 더 누르면 새 게임';el.style.display='block';
+  setTimeout(()=>{if(now()-armed>=1900)el.style.display='none'},2000);
+}
+$('logo').onclick=()=>confirmNew(newGame);
+$('bSize').onclick=()=>confirmNew(()=>{N=N===3?4:3;$('bSize').textContent=N+'×'+N+'×'+N;newGame()});
+const showTut=()=>{$('tut').style.display='flex'};
+$('bInfo').onclick=showTut;
+$('tutOk').onclick=()=>{$('tut').style.display='none';try{localStorage.setItem('tut3d2048','1')}catch(e){}};
+try{if(!localStorage.getItem('tut3d2048'))showTut()}catch(e){showTut()}
+
+$('ovb').onclick=newGame;
+$('bUndo').onclick=()=>{if(hist.length&&!busy()){restore(hist.pop())}};
+window.addEventListener('resize',resize);
+newGame();resize();render();
+</script>
+</body>
+</html>
